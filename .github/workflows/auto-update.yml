@@ -1,0 +1,77 @@
+name: CrickPlaylist Auto Update
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: crickplaylist-auto-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run available updaters
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ran=0
+          for script in scripts/*.py; do
+            case "$script" in
+              scripts/merge.py|scripts/s.py|scripts/pocket.py|scripts/mixiptv.py|scripts/sony.py|scripts/sony2.py|scripts/sports.py|scripts/star.py|scripts/star2.py|scripts/star3.py|scripts/star4.py|scripts/star5.py|scripts/star6.py|scripts/voot.py|scripts/live.py|scripts/jtv3.py|scripts/jtvplus2.py|scripts/jtvplus3.py|scripts/jtvplus4.py|scripts/jtvplus5.py|scripts/jtvplus6.py|scripts/jtvplus7.py)
+                echo "Running $script"
+                python "$script"
+                ran=1
+                ;;
+            esac
+          done
+          echo "Updater pass complete. ran=$ran"
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase and push
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Push succeeded."
+              exit 0
+            fi
+            echo "Push failed on attempt $attempt; retrying..."
+            sleep $((attempt * 3))
+          done
+          exit 1
