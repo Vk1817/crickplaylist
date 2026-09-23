@@ -1,4 +1,0 @@
-# Never commit local secrets or runtime caches
-.env
-*.log
-__pycache__/
