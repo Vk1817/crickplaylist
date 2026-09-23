@@ -33,32 +33,47 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch and Reset to Remote
-        run: |
-          git fetch origin main
-          git reset --hard origin/main
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: Run Script
+      - name: Run JTV Plus 2 updater
         run: |
+          set -euo pipefail
           python scripts/jtvplus2.py
 
-      - name: Commit and Push Changes
+      - name: Commit and push generated files
+        shell: bash
         run: |
-          git add jtvplus2.m3u jtv2.json
+          set -euo pipefail
 
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
+          for attempt in 1 2 3 4 5; do
+            echo "Update attempt $attempt..."
 
-          git commit -m "Auto-update playlist ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+            # Always build the generated-file commit on top of the latest
+            # remote main. This avoids rebasing large playlist/JSON files.
+            git fetch origin main
+            git reset --soft origin/main
 
-          git fetch origin main
-          git rebase origin/main
+            git add jtvplus2.m3u jtv2.json
 
-          git push origin main
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+              exit 0
+            fi
+
+            git commit -m "Auto-update playlist ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+
+            if git push origin HEAD:main; then
+              echo "Push succeeded."
+              exit 0
+            fi
+
+            echo "Push failed because main changed; retrying..."
+            git reset --hard origin/main
+            sleep $((attempt * 3))
+          done
+
+          echo "Unable to push after 5 attempts."
+          exit 1
