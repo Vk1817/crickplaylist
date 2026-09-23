@@ -5,10 +5,11 @@ on:
     - cron: '*/30 * * * *'
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 concurrency:
-  group: crickplaylist-auto-update
+  group: jtv2-automation
   cancel-in-progress: false
 
 permissions:
@@ -17,6 +18,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,34 +30,45 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Run available updater
+      - name: Run JTV Plus 2 updater
         shell: bash
         run: |
           set -euo pipefail
           python scripts/jtvplus2.py
 
-      - name: Detect changes
-        id: changes
-        run: |
-          if git diff --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Rebase and push
-        if: steps.changes.outputs.changed == 'true'
+      - name: Commit generated files
         shell: bash
         run: |
           set -euo pipefail
+          git add jtv2.json jtvplus2.m3u
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Auto-update playlist ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+
+      - name: Rebase and push
+        shell: bash
+        run: |
+          set -euo pipefail
+
           for attempt in 1 2 3 4 5; do
             git fetch origin main
-            git rebase origin/main
-            if git push origin HEAD:main; then
-              echo "Push succeeded."
-              exit 0
+
+            if git rebase origin/main; then
+              if git push origin HEAD:main; then
+                echo "Push succeeded."
+                exit 0
+              fi
+            else
+              git rebase --abort || true
             fi
-            echo "Push failed on attempt $attempt; retrying..."
+
+            echo "Push/rebase failed on attempt $attempt; retrying..."
             sleep $((attempt * 3))
           done
+
+          echo "Unable to push after 5 attempts."
           exit 1
