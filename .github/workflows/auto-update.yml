@@ -4,13 +4,10 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 concurrency:
   group: jtv2-automation
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -36,44 +33,35 @@ jobs:
           set -euo pipefail
           python scripts/jtvplus2.py
 
-      - name: Commit generated files
+      - name: Commit and push generated files
         shell: bash
         run: |
           set -euo pipefail
-          git add jtv2.json jtvplus2.m3u
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Auto-update playlist ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-
-      - name: Rebase and push
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # The updater is only allowed to generate these two files.
-          # Make sure no unexpected working-tree changes can block rebase.
-          git reset --hard HEAD
 
           for attempt in 1 2 3 4 5; do
-            echo "Push attempt $attempt..."
-            git fetch origin main
+            echo "Update attempt $attempt..."
 
-            if git rebase origin/main; then
-              if git push origin HEAD:main; then
-                echo "Push succeeded."
-                exit 0
-              fi
-            else
-              git rebase --abort || true
+            # Always build the generated-file commit on top of the latest
+            # remote main. This avoids rebasing large playlist/JSON files.
+            git fetch origin main
+            git reset --soft origin/main
+
+            git add jtv2.json jtvplus2.m3u
+
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+              exit 0
             fi
 
-            # Restore the committed state before the next attempt.
-            git reset --hard HEAD
-            echo "Push/rebase failed on attempt $attempt; retrying..."
+            git commit -m "Auto-update playlist ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+
+            if git push origin HEAD:main; then
+              echo "Push succeeded."
+              exit 0
+            fi
+
+            echo "Push failed because main changed; retrying..."
+            git reset --hard origin/main
             sleep $((attempt * 3))
           done
 
