@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: jtv2-automation
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -54,7 +54,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The updater is only allowed to generate these two files.
+          # Make sure no unexpected working-tree changes can block rebase.
+          git reset --hard HEAD
+
           for attempt in 1 2 3 4 5; do
+            echo "Push attempt $attempt..."
             git fetch origin main
 
             if git rebase origin/main; then
@@ -66,6 +71,8 @@ jobs:
               git rebase --abort || true
             fi
 
+            # Restore the committed state before the next attempt.
+            git reset --hard HEAD
             echo "Push/rebase failed on attempt $attempt; retrying..."
             sleep $((attempt * 3))
           done
