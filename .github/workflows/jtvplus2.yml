@@ -18,8 +18,8 @@ jobs:
       contents: write
 
     concurrency:
-      group: update-jtv2
-      cancel-in-progress: true
+      group: jtv2-automation
+      cancel-in-progress: false
 
     steps:
       - name: Checkout Repository
